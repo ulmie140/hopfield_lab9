@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Нейронная сеть Хопфилда (ЛР №9)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-6 font-sans">
+    <div class="max-w-7xl mx-auto space-y-8">
+
+        <!-- Заголовок -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-800 pb-4">
+            <div>
+                <h1 class="text-3xl font-bold text-indigo-400">Нейронная сеть Хопфилда</h1>
+                <p class="text-gray-400 mt-1">Лабораторная работа №9. Автоассоциативная память и распознавание зашумленных образов</p>
+            </div>
+            <div class="mt-4 md:mt-0 flex gap-4 text-xs bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-700">
+                <div>Нейронов (N): <span id="info_n" class="font-bold text-indigo-300">49</span></div>
+                <div>Эталонов (M): <span class="font-bold text-indigo-300">3</span></div>
+                <div>Теор. емкость (формула 4.5): <span id="info_cap" class="font-bold text-pink-400">-</span></div>
+            </div>
+        </div>
+
+        <!-- Эталонные образы -->
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg">
+            <h2 class="text-lg font-semibold text-white mb-4">1. Обучающая выборка (Эталонные образы 7×7: первые буквы фамилии)</h2>
+            <div id="patternsContainer" class="grid grid-cols-1 sm:grid-cols-3 gap-6"></div>
+        </div>
+
+        <!-- Интерактивный стенд -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Панель управления -->
+            <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg space-y-5 h-fit">
+                <h2 class="text-lg font-semibold text-white">2. Интерактивное тестирование</h2>
+
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Выберите исходный образ:</label>
+                    <select id="patternSelect" class="w-full bg-gray-700 rounded p-2.5 text-white outline-none focus:ring-2 focus:ring-indigo-500"></select>
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-sm text-gray-400 mb-1">
+                        <span>Процент зашумления:</span>
+                        <span id="noiseVal" class="font-bold text-indigo-400">20%</span>
+                    </div>
+                    <input type="range" id="noiseSlider" min="0" max="100" step="5" value="20" class="w-full accent-indigo-500 cursor-pointer">
+                </div>
+
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Режим работы сети:</label>
+                    <select id="modeSelect" class="w-full bg-gray-700 rounded p-2.5 text-white outline-none">
+                        <option value="async">Асинхронный (случайный нейрон)</option>
+                        <option value="sync">Синхронный (все одновременно)</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button id="applyNoiseBtn" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2.5 px-4 rounded transition border border-gray-600">
+                        Внести шум
+                    </button>
+                    <button id="recognizeBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded transition">
+                        Распознать
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400 italic">💡 Подсказка: вы можете кликать мышкой по клеткам «Тестового образа», чтобы вручную добавлять или убирать помехи.</p>
+            </div>
+
+            <!-- Визуализация входа и выхода -->
+            <div class="lg:col-span-2 bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg flex flex-col justify-between">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center my-auto">
+                    <div class="flex flex-col items-center">
+                        <h3 class="text-md font-semibold text-gray-300 mb-3">Тестовый (искаженный) образ</h3>
+                        <div id="inputGrid" class="grid grid-cols-7 gap-1.5 bg-gray-900 p-3 rounded-lg border border-gray-700"></div>
+                    </div>
+
+                    <div class="flex flex-col items-center">
+                        <h3 class="text-md font-semibold text-gray-300 mb-3">Восстановленный сетью образ</h3>
+                        <div id="outputGrid" class="grid grid-cols-7 gap-1.5 bg-gray-900 p-3 rounded-lg border border-gray-700"></div>
+                    </div>
+                </div>
+
+                <!-- Статус распознавания -->
+                <div class="mt-6 p-4 bg-gray-900 rounded-lg border border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div>
+                        <span class="text-xs text-gray-400 block">Результат ассоциативного вспоминания:</span>
+                        <span id="recStatus" class="text-xl font-bold text-white">-</span>
+                    </div>
+                    <div class="text-right text-xs text-gray-400 space-y-1">
+                        <div>Итераций (эпох): <span id="recEpochs" class="font-mono text-white">0</span></div>
+                        <div id="recSim">Сходство с эталонами: -</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Серийный эксперимент (Пункт 4 и 5 задания) -->
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg space-y-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h2 class="text-xl font-semibold text-white">3. Исследование устойчивости к шуму (Пункты 4–5 задания)</h2>
+                    <p class="text-sm text-gray-400">Автоматический прогон: 12 уровней зашумления (10%..100%), по 10 тестовых образов на каждый класс (всего 360 тестов)</p>
+                </div>
+                <button id="runExpBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-6 rounded-lg transition shrink-0">
+                    Запустить исследование (360 тестов)
+                </button>
+            </div>
+
+            <!-- График точности -->
+            <div class="w-full h-[360px] bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <canvas id="accuracyChart"></canvas>
+            </div>
+
+            <!-- Визуальная Таблица 4.1 из методички -->
+            <div>
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-md font-semibold text-gray-200">Визуализация искаженных и восстановленных образов (Аналог Таблицы 4.1)</h3>
+                    <select id="tablePatternSelect" class="bg-gray-700 text-sm rounded px-3 py-1.5 text-white outline-none border border-gray-600"></select>
+                </div>
+                <div id="table41Container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let patterns = [];
+        let currentInputVector = [];
+        let expDataCache = null;
+        let chartInstance = null;
+
+        // Отрисовка мини-сетки 7x7
+        function createGridHTML(vector, cellSize = "w-6 h-6", interactive = false) {
+            const container = document.createElement('div');
+            container.className = "grid grid-cols-7 gap-1 bg-gray-900 p-2 rounded border border-gray-700";
+            vector.forEach((val, idx) => {
+                const cell = document.createElement('div');
+                cell.className = `${cellSize} rounded-sm transition-colors ${val === 1 ? 'bg-indigo-500 shadow-sm shadow-indigo-500/50' : 'bg-gray-800'}`;
+                if (interactive) {
+                    cell.classList.add('cursor-pointer', 'hover:ring-2', 'hover:ring-indigo-300');
+                    cell.onclick = () => {
+                        currentInputVector[idx] = currentInputVector[idx] === 1 ? -1 : 1;
+                        renderInteractiveInput();
+                    };
+                }
+                container.appendChild(cell);
+            });
+            return container;
+        }
+
+        function renderInteractiveInput() {
+            const container = document.getElementById('inputGrid');
+            container.innerHTML = '';
+            currentInputVector.forEach((val, idx) => {
+                const cell = document.createElement('div');
+                cell.className = `w-8 h-8 rounded cursor-pointer transition ${val === 1 ? 'bg-indigo-500 shadow-md shadow-indigo-500/40' : 'bg-gray-800'} hover:ring-2 hover:ring-white`;
+                cell.onclick = () => {
+                    currentInputVector[idx] = currentInputVector[idx] === 1 ? -1 : 1;
+                    renderInteractiveInput();
+                };
+                container.appendChild(cell);
+            });
+        }
+
+        function renderInteractiveOutput(vector) {
+            const container = document.getElementById('outputGrid');
+            container.innerHTML = '';
+            vector.forEach(val => {
+                const cell = document.createElement('div');
+                cell.className = `w-8 h-8 rounded transition ${val === 1 ? 'bg-emerald-500 shadow-md shadow-emerald-500/40' : 'bg-gray-800'}`;
+                container.appendChild(cell);
+            });
+        }
+
+        async function init() {
+            const res = await fetch('/api/init').then(r => r.json());
+            patterns = res.patterns;
+            document.getElementById('info_n').innerText = res.neurons;
+            document.getElementById('info_cap').innerText = `${res.capacity} обр.`;
+
+            const pContainer = document.getElementById('patternsContainer');
+            const select = document.getElementById('patternSelect');
+            const tableSelect = document.getElementById('tablePatternSelect');
+
+            patterns.forEach((p, idx) => {
+                // Карточка эталона
+                const card = document.createElement('div');
+                card.className = "flex flex-col items-center bg-gray-900/60 p-4 rounded-lg border border-gray-700/80";
+                card.innerHTML = `<span class="font-bold text-gray-200 mb-2">${p.name}</span>`;
+                card.appendChild(createGridHTML(p.vector, "w-5 h-5"));
+                pContainer.appendChild(card);
+
+                // Опции селектов
+                select.innerHTML += `<option value="${idx}">${p.name}</option>`;
+                tableSelect.innerHTML += `<option value="${p.name}">${p.name}</option>`;
+            });
+
+            currentInputVector = [...patterns[0].vector];
+            renderInteractiveInput();
+            await applyNoise();
+            await runExperiment();
+        }
+
+        async function applyNoise() {
+            const idx = document.getElementById('patternSelect').value;
+            const noise = document.getElementById('noiseSlider').value;
+            const baseVec = patterns[idx].vector;
+
+            const res = await fetch('/api/noise', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vector: baseVec, noise: noise })
+            }).then(r => r.json());
+
+            currentInputVector = res.noisy_vector;
+            renderInteractiveInput();
+            await recognizeCurrent();
+        }
+
+        async function recognizeCurrent() {
+            const mode = document.getElementById('modeSelect').value;
+            const res = await fetch('/api/recognize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vector: currentInputVector, mode: mode })
+            }).then(r => r.json());
+
+            renderInteractiveOutput(res.restored_vector);
+            const statusEl = document.getElementById('recStatus');
+            statusEl.innerText = res.matched_name;
+            statusEl.className = res.is_success ? "text-xl font-bold text-emerald-400" : "text-xl font-bold text-amber-400";
+            document.getElementById('recEpochs').innerText = res.epochs;
+
+            const sims = Object.entries(res.similarities).map(([k, v]) => `${k}: ${v}%`).join(' | ');
+            document.getElementById('recSim').innerText = sims;
+        }
+
+        async function runExperiment() {
+            const btn = document.getElementById('runExpBtn');
+            btn.innerText = "Выполняется расчет...";
+            btn.disabled = true;
+
+            const mode = document.getElementById('modeSelect').value;
+            const res = await fetch('/api/experiment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: mode, trials: 10 })
+            }).then(r => r.json());
+
+            expDataCache = res;
+            renderExperimentChart(res);
+            renderTable41();
+
+            btn.innerText = "Запустить исследование (360 тестов)";
+            btn.disabled = false;
+        }
+
+        function renderExperimentChart(data) {
+            const ctx = document.getElementById('accuracyChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            const colors = ['#60a5fa', '#f472b6', '#fbbf24'];
+            const datasets = Object.entries(data.results_by_pattern).map(([name, values], i) => ({
+                label: name,
+                data: values,
+                borderColor: colors[i % colors.length],
+                backgroundColor: colors[i % colors.length],
+                tension: 0.2,
+                borderWidth: 2
+            }));
+
+            datasets.push({
+                label: 'Средняя точность по всем образам',
+                data: data.average_accuracy,
+                borderColor: '#10b981',
+                backgroundColor: '#10b981',
+                borderWidth: 4,
+                borderDash: [5, 5],
+                tension: 0.2
+            });
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.noise_levels.map(n => n + '%'),
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            min: 0, max: 105,
+                            title: { display: true, text: 'Верно распознанные образы (%)', color: '#9ca3af' },
+                            grid: { color: '#374151' },
+                            ticks: { color: '#9ca3af' }
+                        },
+                        x: {
+                            title: { display: true, text: 'Процент зашумления образа', color: '#9ca3af' },
+                            grid: { color: '#374151' },
+                            ticks: { color: '#9ca3af' }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#e5e7eb' } }
+                    }
+                }
+            });
+        }
+
+        function renderTable41() {
+            if (!expDataCache) return;
+            const selectedName = document.getElementById('tablePatternSelect').value;
+            const container = document.getElementById('table41Container');
+            container.innerHTML = '';
+
+            const patternSamples = expDataCache.samples_table[selectedName];
+            expDataCache.noise_levels.forEach(noise => {
+                const sample = patternSamples[noise];
+                const card = document.createElement('div');
+                card.className = "bg-gray-900 p-3 rounded-lg border border-gray-700 flex flex-col items-center space-y-2";
+
+                const badgeColor = sample.success ? 'text-emerald-400 bg-emerald-950/60 border-emerald-700' : 'text-rose-400 bg-rose-950/60 border-rose-700';
+                card.innerHTML = `
+                    <div class="w-full flex justify-between items-center text-xs">
+                        <span class="font-bold text-gray-300">Шум: ${noise}%</span>
+                        <span class="px-1.5 py-0.5 rounded border text-[10px] ${badgeColor}">${sample.success ? 'Верно' : 'Ошибка'}</span>
+                    </div>
+                `;
+                card.appendChild(createGridHTML(sample.noisy, "w-3 h-3"));
+                container.appendChild(card);
+            });
+        }
+
+        // События
+        document.getElementById('noiseSlider').oninput = (e) => {
+            document.getElementById('noiseVal').innerText = e.target.value + '%';
+        };
+        document.getElementById('patternSelect').onchange = applyNoise;
+        document.getElementById('applyNoiseBtn').onclick = applyNoise;
+        document.getElementById('recognizeBtn').onclick = recognizeCurrent;
+        document.getElementById('runExpBtn').onclick = runExperiment;
+        document.getElementById('tablePatternSelect').onchange = renderTable41;
+
+        init();
+    </script>
+</body>
+</html>
